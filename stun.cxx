@@ -1177,19 +1177,11 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
     FD_SET(info.myFd, &fdSet);
     if (info.myFd >= maxFd)
         maxFd = info.myFd + 1;
-    FD_SET(info.altPortFd, &fdSet);
-    if (info.altPortFd >= maxFd)
-        maxFd = info.altPortFd + 1;
 
     if (info.altIpFd != INVALID_SOCKET) {
         FD_SET(info.altIpFd, &fdSet);
         if (info.altIpFd >= maxFd)
             maxFd = info.altIpFd + 1;
-    }
-    if (info.altIpPortFd != INVALID_SOCKET) {
-        FD_SET(info.altIpPortFd, &fdSet);
-        if (info.altIpPortFd >= maxFd)
-            maxFd = info.altIpPortFd + 1;
     }
 
     if (info.relay) {
@@ -1202,17 +1194,6 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
                 }
             }
         }
-    }
-
-    if (info.altIpFd != INVALID_SOCKET) {
-        FD_SET(info.altIpFd, &fdSet);
-        if (info.altIpFd >= maxFd)
-            maxFd = info.altIpFd + 1;
-    }
-    if (info.altIpPortFd != INVALID_SOCKET) {
-        FD_SET(info.altIpPortFd, &fdSet);
-        if (info.altIpPortFd >= maxFd)
-            maxFd = info.altIpPortFd + 1;
     }
 
     struct timeval tv;
@@ -1260,24 +1241,12 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
             recvAltIp = false;
             recvAltPort = false;
             ok = getMessage(info.myFd, msg, &msgLen, &from.addr, &from.port, verbose);
-        } else if (FD_ISSET(info.altPortFd, &fdSet)) {
-            if (verbose)
-                clog << "received on A1:P2" << endl;
-            recvAltIp = false;
-            recvAltPort = true;
-            ok = getMessage(info.altPortFd, msg, &msgLen, &from.addr, &from.port, verbose);
         } else if ((info.altIpFd != INVALID_SOCKET) && FD_ISSET(info.altIpFd,&fdSet)) {
             if (verbose)
                 clog << "received on A2:P1" << endl;
             recvAltIp = true;
             recvAltPort = false;
             ok = getMessage(info.altIpFd, msg, &msgLen, &from.addr, &from.port, verbose);
-        } else if ((info.altIpPortFd != INVALID_SOCKET) && FD_ISSET(info.altIpPortFd, &fdSet)) {
-            if (verbose)
-                clog << "received on A2:P2" << endl;
-            recvAltIp = true;
-            recvAltPort = true;
-            ok = getMessage(info.altIpPortFd, msg, &msgLen, &from.addr, &from.port, verbose);
         } else {
             return true;
         }
@@ -1801,7 +1770,6 @@ NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if
                             }
                                 break;
                             case 11: {
-
                                 if (hairpin) {
                                     *hairpin = true;
                                 }
@@ -1840,52 +1808,33 @@ NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if
 
 #if 0
     // implement logic flow chart from draft RFC
-    if ( respTestI )
-    {
-        if ( isNat )
-        {
-            if (respTestII)
-            {
+    if (respTestI) {
+        if (isNat) {
+            if (respTestII) {
                 return StunTypeConeNat;
-            }
-            else
-            {
-                if ( mappedIpSame )
-                {
-                    if ( respTestIII )
-                    {
+            } else {
+                if (mappedIpSame) {
+                    if (respTestIII) {
                         return StunTypeRestrictedNat;
-                    }
-                    else
-                    {
+                    } else {
                         return StunTypePortRestrictedNat;
                     }
-                }
-                else
-                {
+                } else {
                     return StunTypeSymNat;
                 }
             }
-        }
-        else
-        {
-            if (respTestII)
-            {
+        } else {
+            if (respTestII) {
                 return StunTypeOpen;
-            }
-            else
-            {
+            } else {
                 return StunTypeSymFirewall;
             }
         }
-    }
-    else
-    {
+    } else {
         return StunTypeBlocked;
     }
 #else
-    if (respTestI)  // not blocked
-    {
+    if (respTestI) {  // not blocked
         if (isNat) {
             if (mappedIpSame) {
                 if (respTestII) {
@@ -1897,12 +1846,10 @@ NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if
                         return StunTypePortDependedFilter;
                     }
                 }
-            } else  // mappedIp is not same
-            {
+            } else {  // mappedIp is not same
                 return StunTypeDependentMapping;
             }
-        } else  // isNat is false
-        {
+        } else {  // isNat is false
             if (respTestII) {
                 return StunTypeOpen;
             } else {

@@ -131,9 +131,7 @@ int main(int argc, char* argv[]) {
         clog << "Running with on interface " << myAddr << " with alternate " << altAddr << endl;
     }
 
-    if ((myAddr.addr == 0) || (myAddr.port == 0) ||
-    //( altAddr.addr == 0 ) ||
-            (altAddr.port == 0)) {
+    if ((myAddr.addr == 0) || (myAddr.port == 0) || (altAddr.port == 0)) {
         cerr << "Bad command line" << endl;
         exit(1);
     }
@@ -164,8 +162,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    if (pid == 0)  //child or not using background
-            {
+    if (pid == 0) {  //child or not using background
         StunServerInfo info;
         bool ok = stunInitServer(info, myAddr, altAddr, myMediaPort, verbose);
 
