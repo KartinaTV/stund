@@ -43,7 +43,7 @@ tlsServer: tlsServer.o stun.o udp.o
 	$(CXX) $(LDFLAGS) -o $@  $^
 
 client: client.o stun.o udp.o 
-	$(CXX) $(LDFLAGS) -o $@  $^
+	$(CXX) -pthread $(LDFLAGS)  -o $@  $^
 
 %.o:%.cxx
 	$(CXX)  -c $(CPPFLAGS) $(CXXFLAGS) $< -o $@

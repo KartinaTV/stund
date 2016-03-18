@@ -28,6 +28,17 @@ void usage() {
 }
 
 #define MAX_NIC 3
+StunAddress4 stunServerAddr;
+
+void *thr_fn(void *arg) {
+    bool verbose = false;
+    bool presPort = false;
+    bool hairpin = false;
+    int srcPort = stunRandomPort();
+
+    stunNatType(stunServerAddr, verbose, &presPort, &hairpin, srcPort, NULL);
+    return NULL;
+}
 
 int main(int argc, char* argv[]) {
     assert( sizeof(UInt8 ) == 1);
@@ -41,7 +52,6 @@ int main(int argc, char* argv[]) {
     int testNum = 0;
     bool verbose = false;
 
-    StunAddress4 stunServerAddr;
     stunServerAddr.addr = 0;
 
     int srcPort = 0;
@@ -103,6 +113,18 @@ int main(int argc, char* argv[]) {
     if (numNic == 0) {
         // use default
         numNic = 1;
+    }
+
+    static const int ThreadNumber = 5;
+    pthread_t ntids[ThreadNumber];
+    for (int i = 0; i < ThreadNumber; ++i) {
+        int err;
+        err = pthread_create(&ntids[i], NULL, thr_fn, NULL);
+        if (err != 0)
+            cerr << "can't create thread: %s\n" << strerror(err) << endl;
+    }
+    for (int i = 0; i < ThreadNumber; ++i) {
+        pthread_join(ntids[i], NULL);
     }
 
     for (int nic = 0; nic < numNic; nic++) {
