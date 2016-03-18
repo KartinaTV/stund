@@ -1528,6 +1528,81 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verbose) {
     return true;
 }
 
+bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbose) {
+    char msg[STUN_MAX_MESSAGE_SIZE];
+    int msgLen = sizeof(msg);
+
+    bool ok = false;
+    bool recvAltIp = false;
+    bool recvAltPort = false;
+
+    StunAddress4 from;
+    Socket recvFd = actFd;
+
+    ok = getMessage(recvFd, msg, &msgLen, &from.addr, &from.port, verbose);
+
+    if (!ok || msgLen <= 0) {
+        if (verbose)
+            clog << "Get message did not return a valid message" << endl;
+        return true;
+    }
+
+    if (recvFd == info.myFd) {
+        recvAltIp = false;
+        recvAltPort = false;
+    } else if (recvFd == info.altIpFd) {
+        recvAltIp = true;
+        recvAltPort = false;
+    }
+    if (verbose)
+        clog << "Got a request (len=" << msgLen << ") from " << from << endl;
+
+    bool changePort = false;
+    bool changeIp = false;
+
+    StunMessage resp;
+    StunAddress4 dest;
+    StunAtrString hmacPassword;
+    hmacPassword.sizeValue = 0;
+
+    StunAddress4 secondary;
+    secondary.port = 0;
+    secondary.addr = 0;
+
+    ok = stunServerProcessMsg(msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
+                              recvAltIp ? info.myAddr : info.altAddr, &resp, &dest, &hmacPassword, &changePort,
+                              &changeIp, verbose);
+
+    if (!ok) {
+        if (verbose)
+            clog << "Failed to parse message" << endl;
+        return true;
+    }
+
+    char buf[STUN_MAX_MESSAGE_SIZE];
+    int len = sizeof(buf);
+
+    len = stunEncodeMessage(resp, buf, len, hmacPassword, verbose);
+
+    if (dest.addr == 0)
+        ok = false;
+    if (dest.port == 0)
+        ok = false;
+
+    if (ok) {
+        assert( dest.addr != 0);
+        assert( dest.port != 0);
+        Socket sendFd = getSendFd(info, recvAltIp, recvAltPort, changeIp, changePort);
+
+        if (sendFd != INVALID_SOCKET) {
+            sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
+            incRecvPacketNum();
+        }
+    }
+
+    return true;
+}
+
 int stunFindLocalInterfaces(UInt32* addresses, int maxRet) {
 #if defined(WIN32) || defined(__sparc__)
     return 0;
@@ -1744,7 +1819,7 @@ static void incSentPacketNum() {
     ++packetNum;
     uint64_t now = currentTimeMillis();
     if (now > timeMillis + 1000) {
-//        clog << "Send packetNum " << packetNum << " in millis " << now - timeMillis << endl;
+        clog << "Send packetNum " << packetNum << " in millis " << now - timeMillis << endl;
         timeMillis = now;
         packetNum = 0;
     }

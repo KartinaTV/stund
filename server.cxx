@@ -4,12 +4,15 @@
 #include <cstdlib>   
 
 #ifndef WIN32
+#include <sys/epoll.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>
-#include <netinet/in.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #endif
 
 #include "udp.h"
@@ -17,9 +20,12 @@
 
 using namespace std;
 
+void selectServerLoop(StunServerInfo &info, bool verbose);
+void epollServerLoop(StunServerInfo &info, bool verbose);
+
 void usage() {
     cerr << "Usage: " << endl
-         << " ./server [-v] [-h] [-h IP_Address] [-a IP_Address] [-p port] [-o port] [-m mediaport]" << endl << " "
+         << " ./server [-v] [-h] [-e] [-h IP_Address] [-a IP_Address] [-p port] [-o port] [-m mediaport]" << endl << " "
          << endl << " If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with" << endl
          << "    ./server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
          << " STUN servers need two IP addresses and two ports, these can be specified with:" << endl
@@ -44,6 +50,7 @@ int main(int argc, char* argv[]) {
     StunAddress4 altAddr;
     bool verbose = false;
     bool background = false;
+    bool useEpoll = false;
 
     myAddr.addr = 0;
     altAddr.addr = 0;
@@ -68,6 +75,8 @@ int main(int argc, char* argv[]) {
             verbose = true;
         } else if (!strcmp(argv[arg], "-b")) {
             background = true;
+        } else if (!strcmp(argv[arg], "-e")) {
+            useEpoll = true;
         } else if (!strcmp(argv[arg], "-h")) {
             arg++;
             if (argc <= arg) {
@@ -161,23 +170,89 @@ int main(int argc, char* argv[]) {
         }
     }
 #endif
+    StunServerInfo info;
+    bool ok = stunInitServer(info, myAddr, altAddr, myMediaPort, verbose);
+    if (!ok) {
+        return 1;
+    }
 
-    if (pid == 0) {  //child or not using background
-        StunServerInfo info;
-        bool ok = stunInitServer(info, myAddr, altAddr, myMediaPort, verbose);
-
-        int c = 0;
-        while (ok) {
-            ok = stunServerProcessNoRelay(info, verbose);
-            c++;
-            if (verbose && (c % 1000 == 0)) {
-                clog << "*";
+    if (useEpoll) {
+        for (int i = 0; i < 3; ++i) {
+            pid = fork();
+            if (pid == 0) {  //child or not using background
+                epollServerLoop(info, verbose);
+                // Notreached
             }
+            // Notreached
         }
-        // Notreached
+        if (pid != 0) {
+            epollServerLoop(info, verbose);
+        }
+    } else {
+        selectServerLoop(info, verbose);
     }
 
     return 0;
+}
+
+void selectServerLoop(StunServerInfo &info, bool verbose) {
+    bool ok = true;
+    int c = 0;
+    while (ok) {
+        ok = stunServerProcessNoRelay(info, verbose);
+        c++;
+        if (verbose && (c % 1000 == 0)) {
+            clog << "*";
+        }
+    }
+}
+
+void setnonblocking(int sock) {
+    int opts;
+    opts = fcntl(sock, F_GETFL);
+    if (opts < 0) {
+        perror("fcntl(sock,GETFL)");
+        exit(1);
+    }
+    opts = opts | O_NONBLOCK;
+    if (fcntl(sock, F_SETFL, opts) < 0) {
+        perror("fcntl(sock,SETFL,opts)");
+        exit(1);
+    }
+}
+
+void epollServerLoop(StunServerInfo &info, bool verbose) {
+    setnonblocking(info.myFd);
+    setnonblocking(info.altPortFd);
+    setnonblocking(info.altIpFd);
+    setnonblocking(info.altIpPortFd);
+
+    bool ok = true;
+
+    int epollfd = epoll_create(4);
+    struct epoll_event ev;
+
+    ev.data.fd = info.myFd;
+    ev.events = EPOLLIN | EPOLLET;
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, info.myFd, &ev);
+
+    ev.data.fd = info.altIpFd;
+    ev.events = EPOLLIN | EPOLLET;
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, info.altIpFd, &ev);
+
+    struct epoll_event actEvents[4];
+    int c = 0;
+    while (ok) {
+        int nfds = epoll_wait(epollfd, actEvents, 4, 1000);
+        for (int i = 0; i < nfds; ++i) {
+            Socket actFd = actEvents[i].data.fd;
+            ok = stunServerHandleMsg(info, actFd, verbose);
+        }
+        c++;
+        if (verbose && (c % 1000 == 0)) {
+            clog << "*";
+        }
+    }
 }
 
 /* ====================================================================
