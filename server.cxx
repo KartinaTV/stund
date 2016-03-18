@@ -168,7 +168,7 @@ int main(int argc, char* argv[]) {
 
         int c = 0;
         while (ok) {
-            ok = stunServerProcess(info, verbose);
+            ok = stunServerProcessNoRelay(info, verbose);
             c++;
             if (verbose && (c % 1000 == 0)) {
                 clog << "*";

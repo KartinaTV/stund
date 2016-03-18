@@ -880,8 +880,7 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
     StunMessage req;
     bool ok = stunParseMessage(buf, bufLen, req, verbose);
 
-    if (!ok)      // Complete garbage, drop it on the floor
-    {
+    if (!ok) {      // Complete garbage, drop it on the floor
         if (verbose)
             clog << "Request did not parse" << endl;
         return false;
@@ -907,8 +906,7 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
                 if (verbose)
                     clog << "BindRequest does not contain MessageIntegrity" << endl;
 
-                if (0)  // !jf! mustAuthenticate
-                {
+                if (0) {  // !jf! mustAuthenticate
                     if (verbose)
                         clog << "Received BindRequest with no MessageIntegrity. Sending 401." << endl;
                     stunCreateErrorResponse(*resp, 4, 1, "Missing MessageIntegrity");
@@ -998,8 +996,7 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
                 resp->mappedAddress.ipv4.addr = mapped.addr;
             }
 
-            if (1)  // do xorMapped address or not
-            {
+            if (1) {  // do xorMapped address or not
                 resp->hasXorMappedAddress = true;
                 UInt16 id16 = req.msgHdr.id.octet[0] << 8 | req.msgHdr.id.octet[1];
                 UInt32 id32 = req.msgHdr.id.octet[0] << 24 | req.msgHdr.id.octet[1] << 16 | req.msgHdr.id.octet[2] << 8
@@ -1031,8 +1028,7 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
                 resp->username.sizeValue = req.username.sizeValue;
             }
 
-            if (1)  // add ServerName
-            {
+            if (1) {  // add ServerName
                 resp->hasServerName = true;
                 const char serverName[] = "Vovida.org " STUN_VERSION;  // must pad to mult of 4
 
@@ -1369,6 +1365,169 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
     return true;
 }
 
+static Socket getSendFd(StunServerInfo& info, bool recvAltIp, bool recvAltPort, bool changeIp, bool changePort) {
+    Socket sendFd;
+
+    bool sendAltIp = recvAltIp;   // send on the received IP address
+    bool sendAltPort = recvAltPort;  // send on the received port
+
+    if (changeIp)
+        sendAltIp = !sendAltIp;   // if need to change IP, then flip logic
+    if (changePort)
+        sendAltPort = !sendAltPort;  // if need to change port, then flip logic
+
+    if (!sendAltPort) {
+        if (!sendAltIp) {
+            sendFd = info.myFd;
+        } else {
+            sendFd = info.altIpFd;
+        }
+    } else {
+        if (!sendAltIp) {
+            sendFd = info.altPortFd;
+        } else {
+            sendFd = info.altIpPortFd;
+        }
+    }
+    return sendFd;
+}
+
+static uint64_t currentTimeMillis() {
+    timeval now;
+    gettimeofday(&now, NULL);
+    return now.tv_sec * 1000LL + now.tv_usec / 1000;
+}
+
+static void incRecvPacketNum() {
+    static uint64_t timeMillis = currentTimeMillis();
+    static int packetNum = 0;
+
+    ++packetNum;
+    uint64_t now = currentTimeMillis();
+    if (now > timeMillis + 1000) {
+        clog << "Handle packetNum " << packetNum << " in millis " << now - timeMillis << endl;
+        timeMillis = now;
+        packetNum = 0;
+    }
+}
+
+static bool recvMsg(StunServerInfo& info, char *msg, int &msgLen, StunAddress4 &from, Socket &recvFd, bool verbose) {
+    bool ok = true;
+    fd_set fdSet;
+    Socket maxFd = 0;
+
+    FD_ZERO(&fdSet);
+    FD_SET(info.myFd, &fdSet);
+    if (info.myFd >= maxFd)
+        maxFd = info.myFd + 1;
+
+    if (info.altIpFd != INVALID_SOCKET) {
+        FD_SET(info.altIpFd, &fdSet);
+        if (info.altIpFd >= maxFd)
+            maxFd = info.altIpFd + 1;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 1000;
+
+    int e = select(maxFd, &fdSet, NULL, NULL, &tv);
+    if (e < 0) {
+        int err = getErrno();
+        clog << "Error on select: " << strerror(err) << endl;
+    } else if (e >= 0) {
+        if (FD_ISSET(info.myFd,&fdSet)) {
+            if (verbose)
+                clog << "received on A1:P1" << endl;
+            recvFd = info.myFd;
+            ok = getMessage(info.myFd, msg, &msgLen, &from.addr, &from.port, verbose);
+        } else if ((info.altIpFd != INVALID_SOCKET) && FD_ISSET(info.altIpFd,&fdSet)) {
+            if (verbose)
+                clog << "received on A2:P1" << endl;
+            recvFd = info.altIpFd;
+            ok = getMessage(info.altIpFd, msg, &msgLen, &from.addr, &from.port, verbose);
+        } else {
+            msgLen = 0;
+        }
+    }
+    return ok;
+}
+
+bool stunServerProcessNoRelay(StunServerInfo& info, bool verbose) {
+    char msg[STUN_MAX_MESSAGE_SIZE];
+    int msgLen = sizeof(msg);
+
+    bool ok = false;
+    bool recvAltIp = false;
+    bool recvAltPort = false;
+
+    StunAddress4 from;
+    Socket recvFd = INVALID_SOCKET;
+
+    ok = recvMsg(info, msg, msgLen, from, recvFd, verbose);
+
+    if (!ok || msgLen <= 0) {
+        if (verbose)
+            clog << "Get message did not return a valid message" << endl;
+        return true;
+    }
+
+    if (recvFd == info.myFd) {
+        recvAltIp = false;
+        recvAltPort = false;
+    } else if (recvFd == info.altIpFd) {
+        recvAltIp = true;
+        recvAltPort = false;
+    }
+    if (verbose)
+        clog << "Got a request (len=" << msgLen << ") from " << from << endl;
+
+    bool changePort = false;
+    bool changeIp = false;
+
+    StunMessage resp;
+    StunAddress4 dest;
+    StunAtrString hmacPassword;
+    hmacPassword.sizeValue = 0;
+
+    StunAddress4 secondary;
+    secondary.port = 0;
+    secondary.addr = 0;
+
+    ok = stunServerProcessMsg(msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
+                              recvAltIp ? info.myAddr : info.altAddr, &resp, &dest, &hmacPassword, &changePort,
+                              &changeIp, verbose);
+
+    if (!ok) {
+        if (verbose)
+            clog << "Failed to parse message" << endl;
+        return true;
+    }
+
+    char buf[STUN_MAX_MESSAGE_SIZE];
+    int len = sizeof(buf);
+
+    len = stunEncodeMessage(resp, buf, len, hmacPassword, verbose);
+
+    if (dest.addr == 0)
+        ok = false;
+    if (dest.port == 0)
+        ok = false;
+
+    if (ok) {
+        assert( dest.addr != 0);
+        assert( dest.port != 0);
+        Socket sendFd = getSendFd(info, recvAltIp, recvAltPort, changeIp, changePort);
+
+        if (sendFd != INVALID_SOCKET) {
+            sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
+            incRecvPacketNum();
+        }
+    }
+
+    return true;
+}
+
 int stunFindLocalInterfaces(UInt32* addresses, int maxRet) {
 #if defined(WIN32) || defined(__sparc__)
     return 0;
@@ -1578,6 +1737,19 @@ void stunTest(StunAddress4& dest, int testNum, bool verbose, StunAddress4* sAddr
     }
 }
 
+static void incSentPacketNum() {
+    static uint64_t timeMillis = currentTimeMillis();
+    static int packetNum = 0;
+
+    ++packetNum;
+    uint64_t now = currentTimeMillis();
+    if (now > timeMillis + 1000) {
+//        clog << "Send packetNum " << packetNum << " in millis " << now - timeMillis << endl;
+        timeMillis = now;
+        packetNum = 0;
+    }
+}
+
 NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if set, is return for if NAT preservers ports or not
                     bool* hairpin,  // if set, is the return for if NAT will hairpin packets
                     int port,  // port to use for the test, 0 to choose random port
@@ -1610,7 +1782,6 @@ NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if
 
     bool respTestI = false;
     bool isNat = true;
-    StunAddress4 testIchangedAddr;
     StunAddress4 testImappedAddr;
     bool respTestI2 = false;
     bool mappedIpSame = true;
@@ -1723,9 +1894,6 @@ NatType stunNatType(StunAddress4& dest, bool verbose, bool* preservePort,  // if
                         switch (resp.msgHdr.id.octet[0]) {
                             case 1: {
                                 if (!respTestI) {
-
-                                    testIchangedAddr.addr = resp.changedAddress.ipv4.addr;
-                                    testIchangedAddr.port = resp.changedAddress.ipv4.port;
                                     testImappedAddr.addr = resp.mappedAddress.ipv4.addr;
                                     testImappedAddr.port = resp.mappedAddress.ipv4.port;
 
