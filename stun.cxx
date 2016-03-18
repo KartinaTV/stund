@@ -1398,14 +1398,16 @@ static uint64_t currentTimeMillis() {
     return now.tv_sec * 1000LL + now.tv_usec / 1000;
 }
 
-static void incRecvPacketNum() {
+static void incRecvPacketNum(bool verbose) {
     static uint64_t timeMillis = currentTimeMillis();
     static int packetNum = 0;
 
     ++packetNum;
     uint64_t now = currentTimeMillis();
     if (now > timeMillis + 1000) {
-        clog << "Handle packetNum " << packetNum << " in millis " << now - timeMillis << endl;
+        if (verbose) {
+            clog << "Handle packetNum " << packetNum << " in millis " << now - timeMillis << endl;
+        }
         timeMillis = now;
         packetNum = 0;
     }
@@ -1453,7 +1455,7 @@ static bool recvMsg(StunServerInfo& info, char *msg, int &msgLen, StunAddress4 &
     return ok;
 }
 
-bool stunServerProcessNoRelay(StunServerInfo& info, bool verbose) {
+bool stunServerProcessNoRelay(StunServerInfo& info, bool verbosStatistics, bool verbose) {
     char msg[STUN_MAX_MESSAGE_SIZE];
     int msgLen = sizeof(msg);
 
@@ -1521,14 +1523,14 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verbose) {
 
         if (sendFd != INVALID_SOCKET) {
             sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
-            incRecvPacketNum();
+            incRecvPacketNum(verbosStatistics);
         }
     }
 
     return true;
 }
 
-bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbose) {
+bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbosStatistics, bool verbose) {
     char msg[STUN_MAX_MESSAGE_SIZE];
     int msgLen = sizeof(msg);
 
@@ -1596,7 +1598,7 @@ bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbose) {
 
         if (sendFd != INVALID_SOCKET) {
             sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
-            incRecvPacketNum();
+            incRecvPacketNum(verbosStatistics);
         }
     }
 
@@ -1822,6 +1824,135 @@ static void incSentPacketNum() {
         clog << "Send packetNum " << packetNum << " in millis " << now - timeMillis << endl;
         timeMillis = now;
         packetNum = 0;
+    }
+}
+
+void stunServerStressTest(StunAddress4& dest, bool verbose, bool* preservePort,  // if set, is return for if NAT preservers ports or not
+                             bool* hairpin,  // if set, is the return for if NAT will hairpin packets
+                             int port,  // port to use for the test, 0 to choose random port
+                             StunAddress4* sAddr  // NIC to use
+                             ) {
+    assert( dest.addr != 0);
+    assert( dest.port != 0);
+
+    if (hairpin) {
+        *hairpin = false;
+    }
+
+    if (port == 0) {
+        port = stunRandomPort();
+    }
+    UInt32 interfaceIp = 0;
+    if (sAddr) {
+        interfaceIp = sAddr->addr;
+    }
+    Socket myFd1 = openPort(port, interfaceIp, verbose);
+    Socket myFd2 = openPort(port + 1, interfaceIp, verbose);
+
+    if ((myFd1 == INVALID_SOCKET) || (myFd2 == INVALID_SOCKET)) {
+        cerr << "Some problem opening port/interface to send on" << endl;
+        return;
+    }
+
+    assert( myFd1 != INVALID_SOCKET);
+    assert( myFd2 != INVALID_SOCKET);
+
+    StunAddress4 testImappedAddr;
+    StunAddress4 testI2dest = dest;
+
+    memset(&testImappedAddr, 0, sizeof(testImappedAddr));
+
+    StunAtrString username;
+    StunAtrString password;
+
+    username.sizeValue = 0;
+    password.sizeValue = 0;
+
+#ifdef USE_TLS 
+    stunGetUserNameAndPassword( dest, username, password );
+#endif
+
+    int count = 0;
+    while (count < 70000) {
+        struct timeval tv;
+        fd_set fdSet;
+#ifdef WIN32
+        unsigned int fdSetSize;
+#else
+        int fdSetSize;
+#endif
+        FD_ZERO(&fdSet);
+        fdSetSize = 0;
+        FD_SET(myFd1, &fdSet);
+        fdSetSize = (myFd1 + 1 > fdSetSize) ? myFd1 + 1 : fdSetSize;
+        FD_SET(myFd2, &fdSet);
+        fdSetSize = (myFd2 + 1 > fdSetSize) ? myFd2 + 1 : fdSetSize;
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;  // 0 ms
+
+        int err = select(fdSetSize, &fdSet, NULL, NULL, &tv);
+        int e = getErrno();
+        if (err == SOCKET_ERROR) {
+            // error occured
+            cerr << "Error " << e << " " << strerror(e) << " in select" << endl;
+            return;
+        } else if (err == 0) {
+            // timeout occured
+            count++;
+
+            stunSendTest(myFd1, dest, username, password, 1, verbose);
+
+            // check the address to send to if valid
+            if ((testI2dest.addr != 0) && (testI2dest.port != 0)) {
+                stunSendTest(myFd1, testI2dest, username, password, 10, verbose);
+            }
+
+            stunSendTest(myFd2, dest, username, password, 2, verbose);
+
+            stunSendTest(myFd2, dest, username, password, 3, verbose);
+        } else {
+            //if (verbose) clog << "-----------------------------------------" << endl;
+            assert( err>0);
+            // data is avialbe on some fd
+
+            for (int i = 0; i < 2; i++) {
+                Socket myFd;
+                if (i == 0) {
+                    myFd = myFd1;
+                } else {
+                    myFd = myFd2;
+                }
+
+                if (myFd != INVALID_SOCKET) {
+                    if (FD_ISSET(myFd,&fdSet)) {
+                        char msg[STUN_MAX_MESSAGE_SIZE];
+                        int msgLen = sizeof(msg);
+                        StunAddress4 from;
+                        getMessage(myFd, msg, &msgLen, &from.addr, &from.port, verbose);
+                        StunMessage resp;
+                        memset(&resp, 0, sizeof(StunMessage));
+                        stunParseMessage(msg, msgLen, resp, verbose);
+
+                        switch (resp.msgHdr.id.octet[0]) {
+                            case 1: {
+                                testImappedAddr.addr = resp.mappedAddress.ipv4.addr;
+                                testImappedAddr.port = resp.mappedAddress.ipv4.port;
+
+                                testI2dest.addr = resp.changedAddress.ipv4.addr;
+
+                                if (sAddr) {
+                                    sAddr->port = testImappedAddr.port;
+                                    sAddr->addr = testImappedAddr.addr;
+                                }
+
+                                count = 0;
+                            }
+                                break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

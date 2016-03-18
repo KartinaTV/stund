@@ -286,9 +286,9 @@ stunStopServer(StunServerInfo& info);
 bool
 stunServerProcess(StunServerInfo& info, bool verbose);
 
-bool stunServerProcessNoRelay(StunServerInfo& info, bool verbose);
+bool stunServerProcessNoRelay(StunServerInfo& info, bool verbosStatistics, bool verbose);
 
-bool stunServerHandleMsg(StunServerInfo& info, int actFd, bool verbose);
+bool stunServerHandleMsg(StunServerInfo& info, int actFd, bool verbosStatistics, bool verbose);
 /// returns number of address found - take array or addres 
 int 
 stunFindLocalInterfaces(UInt32* addresses, int maxSize );
@@ -302,6 +302,14 @@ stunNatType( StunAddress4& dest, bool verbose,
              bool* hairpin=0 ,  // if set, is the return for if NAT will hairpin packets
              int port=0, // port to use for the test, 0 to choose random port
              StunAddress4* sAddr=0 // NIC to use 
+   );
+
+void
+stunServerStressTest( StunAddress4& dest, bool verbose,
+             bool* preservePort=0, // if set, is return for if NAT preservers ports or not
+             bool* hairpin=0 ,  // if set, is the return for if NAT will hairpin packets
+             int port=0, // port to use for the test, 0 to choose random port
+             StunAddress4* sAddr=0 // NIC to use
    );
 
 /// prints a StunAddress

@@ -20,19 +20,23 @@
 
 using namespace std;
 
-void selectServerLoop(StunServerInfo &info, bool verbose);
-void epollServerLoop(StunServerInfo &info, bool verbose);
+void selectServerLoop(StunServerInfo &info, bool verbosStatistics, bool verbose);
+void epollServerLoop(StunServerInfo &info, bool verbosStatistics, bool verbose);
 
 void usage() {
     cerr << "Usage: " << endl
-         << " ./server [-v] [-h] [-e] [-h IP_Address] [-a IP_Address] [-p port] [-o port] [-m mediaport]" << endl << " "
+         << " ./server [-v] [-h] [-e] [s] [-h IP_Address] [-a IP_Address] [-p port] [-o port] [-m mediaport]" << endl << " "
          << endl << " If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with" << endl
          << "    ./server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
          << " STUN servers need two IP addresses and two ports, these can be specified with:" << endl
-         << "  -h sets the primary IP" << endl << "  -a sets the secondary IP" << endl
+         << "  -e whether receive msg with epoll mechanism" << endl
+         << "  -s whether display statistics logs" << endl
+         << "  -h sets the primary IP" << endl
+         << "  -a sets the secondary IP" << endl
          << "  -p sets the primary port and defaults to 3478" << endl
-         << "  -o sets the secondary port and defaults to 3479" << endl << "  -b makes the program run in the backgroud"
-         << endl << "  -m sets up a STERN server starting at port m" << endl << "  -v runs in verbose mode" << endl
+         << "  -o sets the secondary port and defaults to 3479" << endl
+         << "  -b makes the program run in the backgroud" << endl
+         << "  -m sets up a STERN server starting at port m" << endl << "  -v runs in verbose mode" << endl
          // in makefile too
          << endl;
 }
@@ -51,6 +55,7 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     bool background = false;
     bool useEpoll = false;
+    bool verbosStatistics = false;
 
     myAddr.addr = 0;
     altAddr.addr = 0;
@@ -180,26 +185,25 @@ int main(int argc, char* argv[]) {
         for (int i = 0; i < 3; ++i) {
             pid = fork();
             if (pid == 0) {  //child or not using background
-                epollServerLoop(info, verbose);
+                epollServerLoop(info, verbosStatistics, verbose);
                 // Notreached
             }
-            // Notreached
         }
         if (pid != 0) {
-            epollServerLoop(info, verbose);
+            epollServerLoop(info, verbosStatistics, verbose);
         }
     } else {
-        selectServerLoop(info, verbose);
+        selectServerLoop(info, verbosStatistics, verbose);
     }
 
     return 0;
 }
 
-void selectServerLoop(StunServerInfo &info, bool verbose) {
+void selectServerLoop(StunServerInfo &info, bool verbosStatistics, bool verbose) {
     bool ok = true;
     int c = 0;
     while (ok) {
-        ok = stunServerProcessNoRelay(info, verbose);
+        ok = stunServerProcessNoRelay(info, verbosStatistics, verbose);
         c++;
         if (verbose && (c % 1000 == 0)) {
             clog << "*";
@@ -221,7 +225,7 @@ void setnonblocking(int sock) {
     }
 }
 
-void epollServerLoop(StunServerInfo &info, bool verbose) {
+void epollServerLoop(StunServerInfo &info, bool verbosStatistics, bool verbose) {
     setnonblocking(info.myFd);
     setnonblocking(info.altPortFd);
     setnonblocking(info.altIpFd);
@@ -246,7 +250,7 @@ void epollServerLoop(StunServerInfo &info, bool verbose) {
         int nfds = epoll_wait(epollfd, actEvents, 4, 1000);
         for (int i = 0; i < nfds; ++i) {
             Socket actFd = actEvents[i].data.fd;
-            ok = stunServerHandleMsg(info, actFd, verbose);
+            ok = stunServerHandleMsg(info, actFd, verbosStatistics, verbose);
         }
         c++;
         if (verbose && (c % 1000 == 0)) {

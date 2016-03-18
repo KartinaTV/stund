@@ -36,7 +36,7 @@ void *thr_fn(void *arg) {
     bool hairpin = false;
     int srcPort = stunRandomPort();
 
-    stunNatType(stunServerAddr, verbose, &presPort, &hairpin, srcPort, NULL);
+    stunServerStressTest(stunServerAddr, verbose, &presPort, &hairpin, srcPort, NULL);
     return NULL;
 }
 
@@ -115,17 +115,14 @@ int main(int argc, char* argv[]) {
         numNic = 1;
     }
 
-//    static const int ThreadNumber = 500;
-//    pthread_t ntids[ThreadNumber];
-//    for (int i = 0; i < ThreadNumber; ++i) {
-//        int err;
-//        err = pthread_create(&ntids[i], NULL, thr_fn, NULL);
-//        if (err != 0)
-//            cerr << "can't create thread: %s\n" << strerror(err) << endl;
-//    }
-//    for (int i = 0; i < ThreadNumber; ++i) {
-//        pthread_join(ntids[i], NULL);
-//    }
+    static const int ThreadNumber = 500;
+    pthread_t ntids[ThreadNumber];
+    for (int i = 0; i < ThreadNumber; ++i) {
+        int err;
+        err = pthread_create(&ntids[i], NULL, thr_fn, NULL);
+        if (err != 0)
+            cerr << "can't create thread: %s\n" << strerror(err) << endl;
+    }
 
     for (int nic = 0; nic < numNic; nic++) {
         sAddr[nic].port = srcPort;
@@ -306,6 +303,10 @@ int main(int argc, char* argv[]) {
         }
         ret = ret << 8;
         ret = ret | (retval[i] & 0xFF);
+    }
+
+    for (int i = 0; i < ThreadNumber; ++i) {
+        pthread_join(ntids[i], NULL);
     }
 
     cout << "Return value is " << hex << "0x";
