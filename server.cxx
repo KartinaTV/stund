@@ -35,7 +35,7 @@ void usage() {
          << "  -a sets the secondary IP" << endl
          << "  -p sets the primary port and defaults to 3478" << endl
          << "  -o sets the secondary port and defaults to 3479" << endl
-         << "  -b makes the program run in the backgroud" << endl
+         << "  -b makes the program run in the background" << endl
          << "  -m sets up a STERN server starting at port m" << endl << "  -v runs in verbose mode" << endl
          // in makefile too
          << endl;
@@ -82,6 +82,8 @@ int main(int argc, char* argv[]) {
             background = true;
         } else if (!strcmp(argv[arg], "-e")) {
             useEpoll = true;
+        } else if (!strcmp(argv[arg], "-s")) {
+            verbosStatistics = true;
         } else if (!strcmp(argv[arg], "-h")) {
             arg++;
             if (argc <= arg) {
