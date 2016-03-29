@@ -277,6 +277,7 @@ stunInitServer(StunServerInfo& info,
                const StunAddress4& myAddr, 
                const StunAddress4& altAddr,
                int startMediaPort,
+               bool bindAlt,
                bool verbose);
 
 void

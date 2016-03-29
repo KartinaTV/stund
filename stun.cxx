@@ -1071,7 +1071,7 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
 }
 
 bool stunInitServer(StunServerInfo& info, const StunAddress4& myAddr, const StunAddress4& altAddr, int startMediaPort,
-                    bool verbose) {
+                    bool bindAlt, bool verbose) {
     assert( myAddr.port != 0);
     assert( altAddr.port!= 0);
     assert( myAddr.addr != 0);
@@ -1114,18 +1114,14 @@ bool stunInitServer(StunServerInfo& info, const StunAddress4& myAddr, const Stun
     }
     //if (verbose) clog << "Opened " << myAddr.addr << ":" << altAddr.port << " --> " << info.altPortFd << endl;
 
-    info.altIpFd = INVALID_SOCKET;
-    if (altAddr.addr != 0) {
+    if (bindAlt && altAddr.addr != 0) {
         if ((info.altIpFd = openPort(myAddr.port, altAddr.addr, verbose)) == INVALID_SOCKET) {
             clog << "Can't open " << altAddr << endl;
             stunStopServer(info);
             return false;
         }
         //if (verbose) clog << "Opened " << altAddr.addr << ":" << myAddr.port << " --> " << info.altIpFd << endl;;
-    }
 
-    info.altIpPortFd = INVALID_SOCKET;
-    if (altAddr.addr != 0) {
         if ((info.altIpPortFd = openPort(altAddr.port, altAddr.addr, verbose)) == INVALID_SOCKET) {
             clog << "Can't open " << altAddr << endl;
             stunStopServer(info);
@@ -1376,15 +1372,15 @@ static Socket getSendFd(StunServerInfo& info, bool recvAltIp, bool recvAltPort, 
     if (changePort)
         sendAltPort = !sendAltPort;  // if need to change port, then flip logic
 
-    if (!sendAltPort) {
-        if (!sendAltIp) {
+    if (!sendAltIp) {
+        if (!sendAltPort) {
             sendFd = info.myFd;
         } else {
-            sendFd = info.altIpFd;
+            sendFd = info.altPortFd;
         }
     } else {
-        if (!sendAltIp) {
-            sendFd = info.altPortFd;
+        if (!sendAltPort) {
+            sendFd = info.altIpFd;
         } else {
             sendFd = info.altIpPortFd;
         }
