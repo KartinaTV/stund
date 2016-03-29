@@ -29,7 +29,7 @@ void usage() {
                  "[-o port] [-d port] [-m mediaport]" << endl
          << " " << endl
          << " If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with" << endl
-         << "    ./server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
+         << "    ./stun_server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
          << " STUN servers need two IP addresses and two ports, these can be specified with:" << endl
          << "  -e whether receive msg with epoll mechanism" << endl
          << "  -s whether display statistics logs" << endl
