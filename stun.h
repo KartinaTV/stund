@@ -286,9 +286,9 @@ stunStopServer(StunServerInfo& info);
 bool
 stunServerProcess(StunServerInfo& info, bool verbose);
 
-bool stunServerProcessNoRelay(StunServerInfo& info, bool verbosStatistics, bool verbose);
+bool stunServerProcessNoRelay(StunServerInfo& info, bool verboseStatistics, bool verbose);
 
-bool stunServerHandleMsg(StunServerInfo& info, int actFd, bool verbosStatistics, bool verbose);
+bool stunServerHandleMsg(StunServerInfo& info, int actFd, bool verboseStatistics, bool verbose);
 /// returns number of address found - take array or addres 
 int 
 stunFindLocalInterfaces(UInt32* addresses, int maxSize );

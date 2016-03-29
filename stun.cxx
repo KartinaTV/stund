@@ -1455,7 +1455,7 @@ static bool recvMsg(StunServerInfo& info, char *msg, int &msgLen, StunAddress4 &
     return ok;
 }
 
-bool stunServerProcessNoRelay(StunServerInfo& info, bool verbosStatistics, bool verbose) {
+bool stunServerProcessNoRelay(StunServerInfo& info, bool verboseStatistics, bool verbose) {
     char msg[STUN_MAX_MESSAGE_SIZE];
     int msgLen = sizeof(msg);
 
@@ -1523,14 +1523,14 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verbosStatistics, bool 
 
         if (sendFd != INVALID_SOCKET) {
             sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
-            incRecvPacketNum(verbosStatistics);
+            incRecvPacketNum(verboseStatistics);
         }
     }
 
     return true;
 }
 
-bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbosStatistics, bool verbose) {
+bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verboseStatistics, bool verbose) {
     char msg[STUN_MAX_MESSAGE_SIZE];
     int msgLen = sizeof(msg);
 
@@ -1598,7 +1598,7 @@ bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verbosStatisti
 
         if (sendFd != INVALID_SOCKET) {
             sendMessage(sendFd, buf, len, dest.addr, dest.port, verbose);
-            incRecvPacketNum(verbosStatistics);
+            incRecvPacketNum(verboseStatistics);
         }
     }
 
