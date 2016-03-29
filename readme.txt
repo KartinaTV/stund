@@ -18,8 +18,9 @@ Usage:
  If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with
     ./stun_server -v  -h 10.0.1.150 -a 10.0.1.151
 
-If the IP addresses of one of your host is 172.16.10.55. There is another host, of which the NIC is 
-172.16.10.59, and there is a public IP address 123.45.32.76 being bind to it, run this program with
+If the IP addresses of one of your host is 172.16.10.55. There is another host, of which the NIC
+is 172.16.10.59, and there is a public IP address 123.45.32.76 being bind to it, run this
+program with
     ./stun_server -b  -h 172.16.10.55 -u 123.45.32.76/172.16.10.59
 
  STUN servers need two IP addresses and two ports, these can be specified with:
