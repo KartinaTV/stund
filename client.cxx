@@ -20,11 +20,13 @@ using namespace std;
 
 void usage() {
     cerr << "Usage:" << endl
-         << "    ./client stunServerHostname [testNumber] [-v] [-p srcPort] [-i nicAddr1] [-i nicAddr2] [-i nicAddr3]"
-         << endl << "For example, if the STUN server was larry.gloo.net, you could do:" << endl
-         << "    ./client larry.gloo.net" << endl << "The testNumber is just used for special tests." << endl
-         << " test 1 runs test 1 from the RFC. For example:" << endl << "    ./client larry.gloo.net 0" << endl << endl
-         << endl;
+         << "    ./client stunServerHostname [testNumber] [-v] [-p srcPort] [-t threadNumber] "
+                 "[-i nicAddr1] [-i nicAddr2] [-i nicAddr3] " << endl
+         << "For example, if the STUN server was larry.gloo.net, you could do:" << endl
+         << "    ./client larry.gloo.net" << endl
+         << "The testNumber is just used for special tests." << endl
+         << " test 1 runs test 1 from the RFC. For example:" << endl
+         << "    ./client larry.gloo.net 0" << endl << endl << endl;
 }
 
 #define MAX_NIC 3
@@ -58,6 +60,7 @@ int main(int argc, char* argv[]) {
     StunAddress4 sAddr[MAX_NIC];
     int retval[MAX_NIC];
     int numNic = 0;
+    int threadNumber = 0;
 
     for (int i = 0; i < MAX_NIC; i++) {
         sAddr[i].addr = 0;
@@ -88,6 +91,13 @@ int main(int argc, char* argv[]) {
                 exit(-1);
             }
             srcPort = strtol(argv[arg], NULL, 10);
+        } else if (!strcmp(argv[arg], "-t")) {
+            arg++;
+            if (argc <= arg) {
+                usage();
+                exit(-1);
+            }
+            threadNumber = strtol(argv[arg], NULL, 10);
         } else {
             char* ptr;
             int t = strtol(argv[arg], &ptr, 10);
@@ -115,13 +125,15 @@ int main(int argc, char* argv[]) {
         numNic = 1;
     }
 
-    static const int ThreadNumber = 500;
-    pthread_t ntids[ThreadNumber];
-    for (int i = 0; i < ThreadNumber; ++i) {
-        int err;
-        err = pthread_create(&ntids[i], NULL, thr_fn, NULL);
-        if (err != 0)
-            cerr << "can't create thread: %s\n" << strerror(err) << endl;
+    pthread_t *ntids = NULL;
+    if (threadNumber > 0) {
+        ntids = new pthread_t[threadNumber];
+        for (int i = 0; i < threadNumber; ++i) {
+            int err;
+            err = pthread_create(&ntids[i], NULL, thr_fn, NULL);
+            if (err != 0)
+                cerr << "can't create thread: %s\n" << strerror(err) << endl;
+        }
     }
 
     for (int nic = 0; nic < numNic; nic++) {
@@ -305,8 +317,11 @@ int main(int argc, char* argv[]) {
         ret = ret | (retval[i] & 0xFF);
     }
 
-    for (int i = 0; i < ThreadNumber; ++i) {
-        pthread_join(ntids[i], NULL);
+    if (threadNumber > 0) {
+        for (int i = 0; i < threadNumber; ++i) {
+            pthread_join(ntids[i], NULL);
+        }
+        delete [] ntids;
     }
 
     cout << "Return value is " << hex << "0x";
