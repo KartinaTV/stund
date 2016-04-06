@@ -322,7 +322,8 @@ operator<< ( std::ostream& strm, const UInt128& );
 
 
 bool
-stunServerProcessMsg( char* buf,
+stunServerProcessMsg( StunServerInfo& info,
+                      char* buf,
                       unsigned int bufLen,
                       StunAddress4& from, 
                       StunAddress4& myAddr,

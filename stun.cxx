@@ -866,9 +866,10 @@ static void stunCreateSharedSecretResponse(const StunMessage& request, const Stu
 // This funtion takes a single message sent to a stun server, parses
 // and constructs an apropriate repsonse - returns true if message is
 // valid
-bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, StunAddress4& secondary,
-                          StunAddress4& myAddr, StunAddress4& altAddr, StunMessage* resp, StunAddress4* destination,
-                          StunAtrString* hmacPassword, bool* changePort, bool* changeIp, bool verbose) {
+bool stunServerProcessMsg(StunServerInfo& info, char* buf, unsigned int bufLen, StunAddress4& from,
+                          StunAddress4& secondary, StunAddress4& myAddr, StunAddress4& altAddr, StunMessage* resp,
+                          StunAddress4* destination, StunAtrString* hmacPassword, bool* changePort, bool* changeIp,
+                          bool verbose) {
 
     // set up information for default response
 
@@ -985,74 +986,98 @@ bool stunServerProcessMsg(char* buf, unsigned int bufLen, StunAddress4& from, St
             }
 
             // form the outgoing message
-            resp->msgHdr.msgType = BindResponseMsg;
             for (int i = 0; i < 16; i++) {
                 resp->msgHdr.id.octet[i] = req.msgHdr.id.octet[i];
             }
+            if (*changeIp && info.altIpFd == INVALID_SOCKET) {
+                resp->msgHdr.msgType = req.msgHdr.msgType;
 
-            if (req.xorOnly == false) {
+                *changeIp = false;
+                *changePort = false;
+
+                resp->hasChangeRequest = true;
+                resp->changeRequest.value = changePort ? ChangePortFlag : 0;
+
                 resp->hasMappedAddress = true;
                 resp->mappedAddress.ipv4.port = mapped.port;
                 resp->mappedAddress.ipv4.addr = mapped.addr;
-            }
 
-            if (1) {  // do xorMapped address or not
-                resp->hasXorMappedAddress = true;
-                UInt16 id16 = req.msgHdr.id.octet[0] << 8 | req.msgHdr.id.octet[1];
-                UInt32 id32 = req.msgHdr.id.octet[0] << 24 | req.msgHdr.id.octet[1] << 16 | req.msgHdr.id.octet[2] << 8
-                        | req.msgHdr.id.octet[3];
-                resp->xorMappedAddress.ipv4.port = mapped.port ^ id16;
-                resp->xorMappedAddress.ipv4.addr = mapped.addr ^ id32;
-            }
+                resp->hasResponseAddress = true;
+                resp->responseAddress.ipv4.port = from.port;
+                resp->responseAddress.ipv4.addr = from.addr;
 
-            resp->hasSourceAddress = true;
-            resp->sourceAddress.ipv4.port = (*changePort) ? altAddr.port : myAddr.port;
-            resp->sourceAddress.ipv4.addr = (*changeIp) ? altAddr.addr : myAddr.addr;
+                respondTo.port = info.myAddr.port;
+                respondTo.addr = info.altAddr.addr;
+                if (verbose) {
+                    clog << "\t respondTo change = " << respondTo << endl;
+                }
+            } else {
+                resp->msgHdr.msgType = BindResponseMsg;
 
-            resp->hasChangedAddress = true;
-            resp->changedAddress.ipv4.port = altAddr.port;
-            resp->changedAddress.ipv4.addr = altAddr.addr;
+                if (req.xorOnly == false) {
+                    resp->hasMappedAddress = true;
+                    resp->mappedAddress.ipv4.port = mapped.port;
+                    resp->mappedAddress.ipv4.addr = mapped.addr;
+                }
 
-            if (secondary.port != 0) {
-                resp->hasSecondaryAddress = true;
-                resp->secondaryAddress.ipv4.port = secondary.port;
-                resp->secondaryAddress.ipv4.addr = secondary.addr;
-            }
+                if (1) {  // do xorMapped address or not
+                    resp->hasXorMappedAddress = true;
+                    UInt16 id16 = req.msgHdr.id.octet[0] << 8 | req.msgHdr.id.octet[1];
+                    UInt32 id32 = req.msgHdr.id.octet[0] << 24 | req.msgHdr.id.octet[1] << 16
+                            | req.msgHdr.id.octet[2] << 8 | req.msgHdr.id.octet[3];
+                    resp->xorMappedAddress.ipv4.port = mapped.port ^ id16;
+                    resp->xorMappedAddress.ipv4.addr = mapped.addr ^ id32;
+                }
 
-            if (req.hasUsername && req.username.sizeValue > 0) {
-                // copy username in
-                resp->hasUsername = true;
-                assert( req.username.sizeValue % 4 == 0);
-                assert( req.username.sizeValue < STUN_MAX_STRING);
-                memcpy(resp->username.value, req.username.value, req.username.sizeValue);
-                resp->username.sizeValue = req.username.sizeValue;
-            }
+                resp->hasSourceAddress = true;
+                resp->sourceAddress.ipv4.port = (*changePort) ? altAddr.port : myAddr.port;
+                resp->sourceAddress.ipv4.addr = (*changeIp) ? altAddr.addr : myAddr.addr;
 
-            if (1) {  // add ServerName
-                resp->hasServerName = true;
-                const char serverName[] = "Vovida.org " STUN_VERSION;  // must pad to mult of 4
+                resp->hasChangedAddress = true;
+                resp->changedAddress.ipv4.port = altAddr.port;
+                resp->changedAddress.ipv4.addr = altAddr.addr;
 
-                assert( sizeof(serverName) < STUN_MAX_STRING);
-                //cerr << "sizeof serverName is "  << sizeof(serverName) << endl;
-                assert( sizeof(serverName)%4 == 0);
-                memcpy(resp->serverName.value, serverName, sizeof(serverName));
-                resp->serverName.sizeValue = sizeof(serverName);
-            }
+                if (secondary.port != 0) {
+                    resp->hasSecondaryAddress = true;
+                    resp->secondaryAddress.ipv4.port = secondary.port;
+                    resp->secondaryAddress.ipv4.addr = secondary.addr;
+                }
 
-            if (req.hasMessageIntegrity & req.hasUsername) {
-                // this creates the password that will be used in the HMAC when then
-                // messages is sent
-                stunCreatePassword(req.username, hmacPassword);
-            }
+                if (req.hasUsername && req.username.sizeValue > 0) {
+                    // copy username in
+                    resp->hasUsername = true;
+                    assert( req.username.sizeValue % 4 == 0);
+                    assert( req.username.sizeValue < STUN_MAX_STRING);
+                    memcpy(resp->username.value, req.username.value, req.username.sizeValue);
+                    resp->username.sizeValue = req.username.sizeValue;
+                }
 
-            if (req.hasUsername && (req.username.sizeValue > 64)) {
-                UInt32 source;
-                assert( sizeof(int) == sizeof(UInt32));
+                if (1) {  // add ServerName
+                    resp->hasServerName = true;
+                    const char serverName[] = "Vovida.org " STUN_VERSION;  // must pad to mult of 4
 
-                sscanf(req.username.value, "%x", &source);
-                resp->hasReflectedFrom = true;
-                resp->reflectedFrom.ipv4.port = 0;
-                resp->reflectedFrom.ipv4.addr = source;
+                    assert( sizeof(serverName) < STUN_MAX_STRING);
+                    //cerr << "sizeof serverName is "  << sizeof(serverName) << endl;
+                    assert( sizeof(serverName)%4 == 0);
+                    memcpy(resp->serverName.value, serverName, sizeof(serverName));
+                    resp->serverName.sizeValue = sizeof(serverName);
+                }
+
+                if (req.hasMessageIntegrity & req.hasUsername) {
+                    // this creates the password that will be used in the HMAC when then
+                    // messages is sent
+                    stunCreatePassword(req.username, hmacPassword);
+                }
+
+                if (req.hasUsername && (req.username.sizeValue > 64)) {
+                    UInt32 source;
+                    assert( sizeof(int) == sizeof(UInt32));
+
+                    sscanf(req.username.value, "%x", &source);
+                    resp->hasReflectedFrom = true;
+                    resp->reflectedFrom.ipv4.port = 0;
+                    resp->reflectedFrom.ipv4.addr = source;
+                }
             }
 
             destination->port = respondTo.port;
@@ -1304,7 +1329,7 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
             from.port = relayPort;
         }
 
-        ok = stunServerProcessMsg(msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
+        ok = stunServerProcessMsg(info, msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
                                   recvAltIp ? info.myAddr : info.altAddr, &resp, &dest, &hmacPassword, &changePort,
                                   &changeIp, verbose);
 
@@ -1492,7 +1517,7 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verboseStatistics, bool
     secondary.port = 0;
     secondary.addr = 0;
 
-    ok = stunServerProcessMsg(msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
+    ok = stunServerProcessMsg(info, msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
                               recvAltIp ? info.myAddr : info.altAddr, &resp, &dest, &hmacPassword, &changePort,
                               &changeIp, verbose);
 
@@ -1567,7 +1592,7 @@ bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verboseStatist
     secondary.port = 0;
     secondary.addr = 0;
 
-    ok = stunServerProcessMsg(msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
+    ok = stunServerProcessMsg(info, msg, msgLen, from, secondary, recvAltIp ? info.altAddr : info.myAddr,
                               recvAltIp ? info.myAddr : info.altAddr, &resp, &dest, &hmacPassword, &changePort,
                               &changeIp, verbose);
 
