@@ -212,6 +212,7 @@ int main(int argc, char* argv[]) {
         ok = stunInitServer(info, myAddr, altAddr, myMediaPort, true, verbose);
     } else {
         ok = stunInitServer(info, myAddr, unbindAltAddr, myMediaPort, false, verbose);
+        info.altComAddr = unbindAltComAddr;
     }
     if (!ok) {
         return 1;

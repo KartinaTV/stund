@@ -217,6 +217,7 @@ typedef struct
 {
       StunAddress4 myAddr;
       StunAddress4 altAddr;
+      StunAddress4 altComAddr;
       Socket myFd;
       Socket altPortFd;
       Socket altIpFd;

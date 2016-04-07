@@ -1007,7 +1007,7 @@ bool stunServerProcessMsg(StunServerInfo& info, char* buf, unsigned int bufLen, 
                 resp->responseAddress.ipv4.addr = from.addr;
 
                 respondTo.port = info.myAddr.port;
-                respondTo.addr = info.altAddr.addr;
+                respondTo.addr = info.altComAddr.addr;
                 if (verbose) {
                     clog << "\t respondTo change = " << respondTo << endl;
                 }
