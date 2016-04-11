@@ -992,11 +992,8 @@ bool stunServerProcessMsg(StunServerInfo& info, char* buf, unsigned int bufLen, 
             if (*changeIp && info.altIpFd == INVALID_SOCKET) {
                 resp->msgHdr.msgType = req.msgHdr.msgType;
 
-                *changeIp = false;
-                *changePort = false;
-
                 resp->hasChangeRequest = true;
-                resp->changeRequest.value = changePort ? ChangePortFlag : 0;
+                resp->changeRequest.value = (*changePort) ? ChangePortFlag : 0;
 
                 resp->hasMappedAddress = true;
                 resp->mappedAddress.ipv4.port = mapped.port;
