@@ -995,6 +995,9 @@ bool stunServerProcessMsg(StunServerInfo& info, char* buf, unsigned int bufLen, 
                 resp->hasChangeRequest = true;
                 resp->changeRequest.value = (*changePort) ? ChangePortFlag : 0;
 
+                *changeIp = false;
+                *changePort = false;
+
                 resp->hasMappedAddress = true;
                 resp->mappedAddress.ipv4.port = mapped.port;
                 resp->mappedAddress.ipv4.addr = mapped.addr;
