@@ -15,6 +15,8 @@
 #include <unistd.h>
 #endif
 
+#include <ev.h>
+
 #include "udp.h"
 #include "stun.h"
 
@@ -22,6 +24,7 @@ using namespace std;
 
 void selectServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
 void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
+void evServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
 
 void usage() {
     cerr << "Usage: " << endl
@@ -230,10 +233,38 @@ int main(int argc, char* argv[]) {
             epollServerLoop(info, verboseStatistics, verbose);
         }
     } else {
-        selectServerLoop(info, verboseStatistics, verbose);
+        evServerLoop(info, verboseStatistics, verbose);
     }
 
     return 0;
+}
+
+static void sock_cb(struct ev_loop *defaultloop, ev_io *w, int revents) {
+//    cout << "sock " << w->fd << " event" << endl;
+    StunServerInfo &info = *static_cast<StunServerInfo *>(w->data);
+    stunServerHandleMsg(info, w->fd, true, false);
+}
+
+void evServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
+    // use the default event loop unless you have special needs
+    struct ev_loop *loop = EV_DEFAULT;
+
+    ev_io myWatcher;
+    ev_io_init(&myWatcher, sock_cb, info.myFd, EV_READ);
+    myWatcher.data = &info;
+    ev_io_start(loop, &myWatcher);
+
+    ev_io altWatcher;
+    if (info.altIpFd != INVALID_SOCKET) {
+        ev_io_init(&altWatcher, sock_cb, info.altIpFd, EV_READ);
+        altWatcher.data = &info;
+        ev_io_start(loop, &altWatcher);
+    }
+
+    // now wait for events to arrive
+    ev_run(loop, 0);
+
+    // break was called, so exit
 }
 
 void selectServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
