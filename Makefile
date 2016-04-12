@@ -37,7 +37,7 @@ tar: $(TARS)
 			 $(addprefix stund/, $(TARS))
 
 stun_server: server.o stun.o udp.o 
-	$(CXX) $(LDFLAGS) -o $@  $^
+	$(CXX) $(LDFLAGS) -o $@  $^ -lev
 
 tlsServer: tlsServer.o stun.o udp.o
 	$(CXX) $(LDFLAGS) -o $@  $^
