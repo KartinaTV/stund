@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<stunservers>
+    <stunserveraddr>172.16.10.54</stunserveraddr>
+    <stunserveraddr>172.16.10.68</stunserveraddr>
+</stunservers>
