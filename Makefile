@@ -23,6 +23,7 @@ STUNLIB=libstun.a
 #
 CXXFLAGS+=-g -O -Wall
 LDFLAGS+=-g -O -Wall
+#LDFLAGS+=-DHAVE_LIBEV -lev
 # for solaris
 #LDFLAGS+= -lnsl -lsocket
 
@@ -37,7 +38,7 @@ tar: $(TARS)
 			 $(addprefix stund/, $(TARS))
 
 stun_server: server.o stun.o udp.o 
-	$(CXX) $(LDFLAGS) -o $@  $^ -lev
+	$(CXX) $(LDFLAGS) -o $@  $^ 
 
 tlsServer: tlsServer.o stun.o udp.o
 	$(CXX) $(LDFLAGS) -o $@  $^

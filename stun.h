@@ -256,7 +256,7 @@ void
 stunCreatePassword(const StunAtrString& username, StunAtrString* password);
 
 int 
-stunRand();
+rand();
 
 UInt64
 stunGetSystemTimeSecs();

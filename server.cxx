@@ -15,7 +15,9 @@
 #include <unistd.h>
 #endif
 
+#ifdef HAVE_LIBEV
 #include <ev.h>
+#endif
 
 #include "udp.h"
 #include "stun.h"
@@ -24,12 +26,15 @@ using namespace std;
 
 void selectServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
 void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
+
+#ifdef HAVE_LIBEV
 void evServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
+#endif
 
 void usage() {
     cerr << "Usage: " << endl
          << " ./stun_server [-v] [-h] [-e] [s] [-h IP_Address] [-a IP_Address] [-u IP_Address/IP_Address] [-p port] "
-                 "[-o port] [-d port] [-m mediaport]" << endl
+                 "[-o port] [-d port] [-b] [-m mediaport] [-t number]" << endl
          << " " << endl
          << " If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with" << endl
          << "    ./stun_server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
@@ -44,7 +49,7 @@ void usage() {
          << "  -d sets the unbind secondary communication port and defaults to 3481" << endl
          << "  -b makes the program run in the background" << endl
          << "  -m sets up a STERN server starting at port m" << endl
-         << "  -s runs in verbose statistics mode" << endl
+         << "  -t process number" << endl
          << "  -v runs in verbose mode" << endl
          // in makefile too
          << endl;
@@ -90,6 +95,7 @@ int main(int argc, char* argv[]) {
         myAddr.port = STUN_PORT;
     }
 
+    int processNumber = 0;
     for (int arg = 1; arg < argc; arg++) {
         if (!strcmp(argv[arg], "-v")) {
             verbose = true;
@@ -154,6 +160,13 @@ int main(int argc, char* argv[]) {
                 exit(-1);
             }
             myMediaPort = UInt16(strtol(argv[arg], NULL, 10));
+        } else if (!strcmp(argv[arg], "-t")) {
+            arg++;
+            if (argc <= arg) {
+                usage();
+                exit(-1);
+            }
+            processNumber = strtol(argv[arg], NULL, 10);
         } else {
             usage();
             exit(-1);
@@ -199,15 +212,6 @@ int main(int argc, char* argv[]) {
     }
 #else
     pid_t pid = 0;
-
-    if (background) {
-        pid = fork();
-
-        if (pid < 0) {
-            cerr << "fork: unable to fork" << endl;
-            exit(-1);
-        }
-    }
 #endif
     StunServerInfo info;
     bool ok;
@@ -221,24 +225,32 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    void (*serverLoop)(StunServerInfo &info, bool verboseStatistics, bool verbose) = NULL;
     if (useEpoll) {
-        for (int i = 0; i < 3; ++i) {
-            pid = fork();
-            if (pid == 0) {  //child or not using background
-                epollServerLoop(info, verboseStatistics, verbose);
-                // Notreached
-            }
-        }
-        if (pid != 0) {
-            epollServerLoop(info, verboseStatistics, verbose);
-        }
+        serverLoop = epollServerLoop;
     } else {
-        evServerLoop(info, verboseStatistics, verbose);
+#ifdef HAVE_LIBEV
+        serverLoop = evServerLoop;
+#else
+        serverLoop = selectServerLoop;
+#endif
+    }
+
+    for (int i = 0; i < processNumber; ++i) {
+        pid = fork();
+        if (pid == 0) {  //child or not using background
+            serverLoop(info, verboseStatistics, verbose);
+            // Notreached
+        }
+    }
+    if (!background) {
+        serverLoop(info, verboseStatistics, verbose);
     }
 
     return 0;
 }
 
+#ifdef HAVE_LIBEV
 static void sock_cb(struct ev_loop *defaultloop, ev_io *w, int revents) {
 //    cout << "sock " << w->fd << " event" << endl;
     StunServerInfo &info = *static_cast<StunServerInfo *>(w->data);
@@ -266,6 +278,8 @@ void evServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
 
     // break was called, so exit
 }
+
+#endif
 
 void selectServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
     bool ok = true;

@@ -654,7 +654,7 @@ void stunCreateUserName(const StunAddress4& source, StunAtrString* username) {
     UInt64 lotime = time & 0xFFFFFFFF;
 
     char buffer[1024];
-    sprintf(buffer, "%08x:%08x:%08x:", UInt32(source.addr), UInt32(stunRand()), UInt32(lotime));
+    sprintf(buffer, "%08x:%08x:%08x:", UInt32(source.addr), UInt32(rand()), UInt32(lotime));
     assert( strlen(buffer) < 1024);
 
     assert(strlen(buffer) + 41 < STUN_MAX_STRING);
@@ -1344,6 +1344,7 @@ bool stunServerProcess(StunServerInfo& info, bool verbose) {
 
         len = stunEncodeMessage(resp, buf, len, hmacPassword, verbose);
 
+        clog << "destination = " << dest << endl;
         if (dest.addr == 0)
             ok = false;
         if (dest.port == 0)
@@ -1696,7 +1697,7 @@ void stunBuildReqSimple(StunMessage* msg, const StunAtrString& username, bool ch
 
     for (int i = 0; i < 16; i = i + 4) {
         assert(i+3<16);
-        int r = stunRand();
+        int r = rand();
         msg->msgHdr.id.octet[i + 0] = r >> 0;
         msg->msgHdr.id.octet[i + 1] = r >> 8;
         msg->msgHdr.id.octet[i + 2] = r >> 16;
