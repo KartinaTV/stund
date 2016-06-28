@@ -17,6 +17,7 @@ VERSION=0.96
 #CXXFLAGS+=-O2
 #LDFLAGS+=-O2 -lssl
 STUNLIB=libstun.a
+SERVERAPPNAME=stun-server
 
 #
 # Alternatively, for debugging.
@@ -31,14 +32,17 @@ LDFLAGS+=-g -O -Wall
 all: stun_server client 
 
 clean:
-	- rm *.o stun_server client tlsServer 
+	- rm *.o; \
+	        if [ -a tlsServer ]; then rm tlsServer; fi; \
+	        if [ -a $(SERVERAPPNAME) ]; then rm $(SERVERAPPNAME); fi; \
+	        if [ -a client ]; then rm client; fi; \
 
 tar: $(TARS)
 	cd ..; tar cvfz `date +"stund/stund_$(VERSION)_$(PROG)%b%d.tgz"` \
 			 $(addprefix stund/, $(TARS))
 
 stun_server: server.o stun.o udp.o 
-	$(CXX) $(LDFLAGS) -o $@  $^ 
+	$(CXX) $(LDFLAGS) -o $(SERVERAPPNAME)  $^
 
 tlsServer: tlsServer.o stun.o udp.o
 	$(CXX) $(LDFLAGS) -o $@  $^

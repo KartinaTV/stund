@@ -3,6 +3,9 @@
 #include <iostream>
 #include <cstdlib>   
 #include <errno.h>
+// new includes:
+#include <algorithm>
+#include <string>
 
 #ifdef WIN32
 #include <winsock2.h>
@@ -730,7 +733,7 @@ operator<<(ostream& strm, const StunAddress4& addr) {
 }
 
 // returns true if it scucceeded
-bool stunParseHostName(char* peerName, UInt32& ip, UInt16& portVal, UInt16 defaultPort) {
+bool stunParseHostName(char* peerName, UInt32& ip, UInt16& portVal, UInt16 defaultPort, bool skipPortCheck) {
     in_addr sin_addr;
 
     char host[512];
@@ -761,7 +764,7 @@ bool stunParseHostName(char* peerName, UInt32& ip, UInt16& portVal, UInt16 defau
         }
     }
 
-    if (portNum < 1024)
+    if (!skipPortCheck && portNum < 1024)
         return false;
     if (portNum >= 0xFFFF)
         return false;
@@ -861,6 +864,68 @@ static void stunCreateSharedSecretResponse(const StunMessage& request, const Stu
 
     response.hasPassword = true;
     stunCreatePassword(response.username, &response.password);
+}
+
+
+bool processInputCommand(StunServerInfo& info, char* buf, unsigned int bufLen, bool verbose)
+{
+    string query(buf);
+    string parseString(buf);
+    transform(query.begin(), query.end(), parseString.begin(), ::toupper);
+    size_t startHeaderOffset = parseString.find("\nHOST:");
+    if (startHeaderOffset == string::npos) {
+        if (verbose)
+            clog << "Invalid Connection Request received" << endl;
+        return false;
+    }
+    startHeaderOffset+= 6;
+    // we found 'host:' header, now we will find end offset for this header:
+    size_t endHeaderOffset = parseString.find("\r\n", startHeaderOffset);
+    //endHeaderOffset-= 1;
+    if (endHeaderOffset == string::npos || startHeaderOffset > endHeaderOffset) {
+        if (verbose)
+            clog << "Invalid Connection Request received" << endl;
+        return false;
+    }
+    string ip4address = query.substr(startHeaderOffset, endHeaderOffset - startHeaderOffset);
+    ltrim(ip4address);
+    if (!ip4address.length()) {
+        if (verbose)
+            clog << "Invalid destination in Connection Request" << endl;
+        return false;
+    }
+    if (verbose)
+        clog << "Connection Request to client: " << ip4address << endl;
+    StunAddress4 client;
+    char * clientHost = new char[ip4address.size() + 1];
+    std::copy(ip4address.begin(), ip4address.end(), clientHost);
+    clientHost[ip4address.size()] = '\0'; // don't forget the terminating 0
+    bool parseResult = stunParseHostName(clientHost, client.addr, client.port, 80, true);
+    // don't forget to free the string after finished using it
+    delete[] clientHost;
+    if (!parseResult) {
+        if (verbose)
+            clog << "Cannot parse host in Connection Request" << endl;
+        return false;
+    }
+    // Wow. we've got it. last step! send the connection request to the destination host
+    assert( client.addr != 0);
+    assert( client.port != 0);
+
+    char * response = new char[query.size() + 1];
+    std::copy(query.begin(), query.end(), response);
+    response[query.size()] = '\0'; // don't forget the terminating 0
+    // don't forget to free the string after finished using it
+    if (info.myFd != INVALID_SOCKET) {
+        sendMessage(info.myFd, response, strlen(response), client.addr, client.port, verbose);
+    }
+    delete[] response;
+    return true;
+}
+
+// trim from start (in place)
+void ltrim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
 }
 
 // This funtion takes a single message sent to a stun server, parses
@@ -1095,12 +1160,13 @@ bool stunServerProcessMsg(StunServerInfo& info, char* buf, unsigned int bufLen, 
     return false;
 }
 
-bool stunInitServer(StunServerInfo& info, const StunAddress4& myAddr, const StunAddress4& altAddr, int startMediaPort,
-                    bool bindAlt, bool verbose) {
+bool stunInitServer(StunServerInfo& info, const StunAddress4& myAddr, const StunAddress4& altAddr, const StunAddress4& inputAddr,
+                    int startMediaPort, bool bindAlt, bool verbose) {
     assert( myAddr.port != 0);
+    assert( inputAddr.port != 0);
     assert( altAddr.port!= 0);
     assert( myAddr.addr != 0);
-    //assert( altAddr.addr != 0 );
+    assert( inputAddr.addr != 0);
 
     info.myAddr = myAddr;
     info.altAddr = altAddr;
@@ -1126,6 +1192,13 @@ bool stunInitServer(StunServerInfo& info, const StunAddress4& myAddr, const Stun
 
     if ((info.myFd = openPort(myAddr.port, myAddr.addr, verbose)) == INVALID_SOCKET) {
         clog << "Can't open " << myAddr << endl;
+        stunStopServer(info);
+
+        return false;
+    }
+
+    if ((info.inputFd = openPort(inputAddr.port, inputAddr.addr, verbose)) == INVALID_SOCKET) {
+        clog << "Can't open " << inputAddr << endl;
         stunStopServer(info);
 
         return false;
@@ -1167,6 +1240,8 @@ void stunStopServer(StunServerInfo& info) {
         closesocket(info.altIpFd);
     if (info.altIpPortFd > 0)
         closesocket(info.altIpPortFd);
+    if (info.inputFd > 0)
+        closesocket(info.inputFd);
 
     if (info.relay) {
         for (int i = 0; i < MAX_MEDIA_RELAYS; ++i) {
@@ -1444,6 +1519,10 @@ static bool recvMsg(StunServerInfo& info, char *msg, int &msgLen, StunAddress4 &
     FD_SET(info.myFd, &fdSet);
     if (info.myFd >= maxFd)
         maxFd = info.myFd + 1;
+    // add command interface
+    FD_SET(info.inputFd, &fdSet);
+    if (info.inputFd >= maxFd)
+        maxFd = info.inputFd + 1;
 
     if (info.altIpFd != INVALID_SOCKET) {
         FD_SET(info.altIpFd, &fdSet);
@@ -1460,7 +1539,12 @@ static bool recvMsg(StunServerInfo& info, char *msg, int &msgLen, StunAddress4 &
         int err = getErrno();
         clog << "Error on select: " << strerror(err) << endl;
     } else if (e >= 0) {
-        if (FD_ISSET(info.myFd,&fdSet)) {
+        if (FD_ISSET(info.inputFd, &fdSet)) {
+            if (verbose)
+                clog << "Received on Command port" << endl;
+            recvFd = info.inputFd;
+            ok = getMessage(info.inputFd, msg, &msgLen, &from.addr, &from.port, verbose);
+        } else if (FD_ISSET(info.myFd, &fdSet)) {
             if (verbose)
                 clog << "received on A1:P1" << endl;
             recvFd = info.myFd;
@@ -1491,8 +1575,8 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verboseStatistics, bool
     ok = recvMsg(info, msg, msgLen, from, recvFd, verbose);
 
     if (!ok || msgLen <= 0) {
-        if (verbose)
-            clog << "Get message did not return a valid message" << endl;
+        //if (verbose)
+        //    clog << "Get message did not return a valid message" << endl;
         return true;
     }
 
@@ -1502,6 +1586,12 @@ bool stunServerProcessNoRelay(StunServerInfo& info, bool verboseStatistics, bool
     } else if (recvFd == info.altIpFd) {
         recvAltIp = true;
         recvAltPort = false;
+    } else if (recvFd == info.inputFd) {
+        if (verbose)
+            clog << "Received Connection Request (len=" << msgLen << ")" << endl;
+        // Main connection request logic is here !!
+        processInputCommand(info, msg, msgLen, verbose);
+        return true;
     }
     if (verbose)
         clog << "Got a request (len=" << msgLen << ") from " << from << endl;
@@ -1835,7 +1925,7 @@ void stunTest(StunAddress4& dest, int testNum, bool verbose, StunAddress4* sAddr
         sAddr->addr = resp.mappedAddress.ipv4.addr;
     }
 }
-
+#if 0
 static void incSentPacketNum() {
     static uint64_t timeMillis = currentTimeMillis();
     static int packetNum = 0;
@@ -1848,6 +1938,7 @@ static void incSentPacketNum() {
         packetNum = 0;
     }
 }
+#endif
 
 void stunServerStressTest(StunAddress4& dest, bool verbose, bool* preservePort,  // if set, is return for if NAT preservers ports or not
                              bool* hairpin,  // if set, is the return for if NAT will hairpin packets
@@ -2306,7 +2397,6 @@ int stunOpenSocket(StunAddress4& dest, StunAddress4* mapAddr, int port, StunAddr
     }
 
     StunAddress4 mappedAddr = resp.mappedAddress.ipv4;
-    StunAddress4 changedAddr = resp.changedAddress.ipv4;
 
     //clog << "--- stunOpenSocket --- " << endl;
     //clog << "\treq  id=" << req.id << endl;
@@ -2383,7 +2473,6 @@ bool stunOpenSocketPair(StunAddress4& dest, StunAddress4* mapAddr, int* fd1, int
         }
 
         mappedAddr[i] = resp.mappedAddress.ipv4;
-        StunAddress4 changedAddr = resp.changedAddress.ipv4;
     }
 
     if (verbose) {

@@ -145,6 +145,61 @@ bool getMessage(Socket fd, char* buf, int* len, unsigned int* srcIp, unsigned sh
     return true;
 }
 
+/*
+bool getInputMessage(Socket fd, char* buf, int* len, unsigned int* srcIp, unsigned short* srcPort, bool verbose) {
+    assert( fd != INVALID_SOCKET);
+
+    int originalSize = *len;
+    assert( originalSize > 0);
+
+    struct sockaddr_in from;
+    int fromLen = sizeof(from);
+
+    *len = recvfrom(fd, buf, originalSize, 0, (struct sockaddr *) &from, (socklen_t*) &fromLen);
+
+    if (*len == SOCKET_ERROR) {
+        int err = getErrno();
+
+        switch (err) {
+            case ENOTSOCK:
+                cerr << "Error fd not a socket" << endl;
+                break;
+            case ECONNRESET:
+                cerr << "Error connection reset - host not reachable" << endl;
+                break;
+
+            default:
+                cerr << "Socket Error=" << err << endl;
+        }
+
+        return false;
+    }
+
+    if (*len < 0) {
+        clog << "socket closed? negative len" << endl;
+        return false;
+    }
+
+    if (*len == 0) {
+        clog << "socket closed? zero len" << endl;
+        return false;
+    }
+
+    *srcPort = ntohs(from.sin_port);
+    *srcIp = ntohl(from.sin_addr.s_addr);
+
+    if ((*len) + 1 >= originalSize) {
+        if (verbose) {
+            clog << "Received a message that was too large" << endl;
+        }
+        return false;
+    }
+    buf[*len] = 0;
+
+    return true;
+}
+ */
+
 bool sendMessage(Socket fd, char* buf, int l, unsigned int dstIp, unsigned short dstPort, bool verbose) {
     assert( fd != INVALID_SOCKET);
 

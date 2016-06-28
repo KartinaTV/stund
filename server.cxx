@@ -1,10 +1,16 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
-#include <cstdlib>   
+#include <cstdlib>
+// new includes:
+#include <algorithm>
+#include <string>
+
 
 #ifndef WIN32
+#ifdef __linux__
 #include <sys/epoll.h>
+#endif
 #include <sys/time.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -25,7 +31,9 @@
 using namespace std;
 
 void selectServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
+#ifdef __linux__
 void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
+#endif
 
 #ifdef HAVE_LIBEV
 void evServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose);
@@ -39,13 +47,16 @@ void usage() {
          << " If the IP addresses of your NIC are 10.0.1.150 and 10.0.1.151, run this program with" << endl
          << "    ./stun_server -v  -h 10.0.1.150 -a 10.0.1.151" << endl
          << " STUN servers need two IP addresses and two ports, these can be specified with:" << endl
+#ifdef __linux__
          << "  -e whether receive msg with epoll mechanism" << endl
+#endif
          << "  -s whether display statistics logs" << endl
          << "  -h sets the primary IP" << endl
          << "  -a sets the secondary IP" << endl
          << "  -u sets the unbind secondary IP" << endl
          << "  -p sets the primary port and defaults to 3478" << endl
          << "  -o sets the secondary port and defaults to 3479" << endl
+         << "  -i sets the inpurt port and defaults to 8888" << endl
          << "  -d sets the unbind secondary communication port and defaults to 3481" << endl
          << "  -b makes the program run in the background" << endl
          << "  -m sets up a STERN server starting at port m" << endl
@@ -66,17 +77,22 @@ int main(int argc, char* argv[]) {
 
     StunAddress4 myAddr;
     StunAddress4 altAddr;
+    StunAddress4 inputAddr;
     StunAddress4 unbindAltAddr;
     StunAddress4 unbindAltComAddr;
     bool verbose = false;
     bool background = false;
+#ifdef __linux__
     bool useEpoll = false;
+#endif
     bool verboseStatistics = false;
 
     myAddr.addr = 0;
     altAddr.addr = 0;
+    inputAddr.addr = 0;
     myAddr.port = STUN_PORT;
     altAddr.port = STUN_PORT + 1;
+    inputAddr.port = INPUT_PORT;
 
     unbindAltAddr.addr = 0;
     unbindAltAddr.port = STUN_PORT + 1;
@@ -85,6 +101,7 @@ int main(int argc, char* argv[]) {
 
     int myPort = 0;
     int altPort = 0;
+    int inputPort = 0;
     int myMediaPort = 0;
 
     UInt32 interfaces[10];
@@ -102,7 +119,9 @@ int main(int argc, char* argv[]) {
         } else if (!strcmp(argv[arg], "-b")) {
             background = true;
         } else if (!strcmp(argv[arg], "-e")) {
+#ifdef __linux__
             useEpoll = true;
+#endif
         } else if (!strcmp(argv[arg], "-s")) {
             verboseStatistics = true;
         } else if (!strcmp(argv[arg], "-h")) {
@@ -146,6 +165,13 @@ int main(int argc, char* argv[]) {
                 exit(-1);
             }
             altPort = UInt16(strtol(argv[arg], NULL, 10));
+        } else if (!strcmp(argv[arg], "-i")) {
+            arg++;
+            if (argc <= arg) {
+                usage();
+                exit(-1);
+            }
+            inputPort = UInt16(strtol(argv[arg], NULL, 10));
         } else if (!strcmp(argv[arg], "-d")) {
             arg++;
             if (argc <= arg) {
@@ -179,6 +205,9 @@ int main(int argc, char* argv[]) {
     if (altPort != 0) {
         altAddr.port = altPort;
     }
+    if (inputPort != 0) {
+        inputAddr.port = inputPort;
+    }
 
     if ((myAddr.addr == 0) || (altAddr.addr == 0 && unbindAltAddr.addr == 0)) {
         clog << "If your machine does not have exactly two ethernet interfaces, "
@@ -199,6 +228,8 @@ int main(int argc, char* argv[]) {
     if (altAddr.addr == 0) {
         unbindAltAddr.port = altAddr.port;
     }
+    // Command interface the same as main server IP address
+    inputAddr.addr = myAddr.addr;
     if (verbose) {
         clog << "Running with on interface " << myAddr << " with alternate " << altAddr << endl;
     }
@@ -216,9 +247,9 @@ int main(int argc, char* argv[]) {
     StunServerInfo info;
     bool ok;
     if (altAddr.addr != 0) {
-        ok = stunInitServer(info, myAddr, altAddr, myMediaPort, true, verbose);
+        ok = stunInitServer(info, myAddr, altAddr, inputAddr, myMediaPort, true, verbose);
     } else {
-        ok = stunInitServer(info, myAddr, unbindAltAddr, myMediaPort, false, verbose);
+        ok = stunInitServer(info, myAddr, unbindAltAddr, inputAddr, myMediaPort, false, verbose);
         info.altComAddr = unbindAltComAddr;
     }
     if (!ok) {
@@ -226,15 +257,19 @@ int main(int argc, char* argv[]) {
     }
 
     void (*serverLoop)(StunServerInfo &info, bool verboseStatistics, bool verbose) = NULL;
+#ifdef __linux__
     if (useEpoll) {
         serverLoop = epollServerLoop;
-    } else {
+    }
+#else
 #ifdef HAVE_LIBEV
         serverLoop = evServerLoop;
-#else
-        serverLoop = selectServerLoop;
 #endif
-    }
+#endif
+if (serverLoop == NULL) {
+    serverLoop = selectServerLoop;
+}
+
 
     for (int i = 0; i < processNumber; ++i) {
         pid = fork();
@@ -306,7 +341,7 @@ void setnonblocking(int sock) {
         exit(1);
     }
 }
-
+#ifdef __linux__
 void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
     setnonblocking(info.myFd);
     setnonblocking(info.altPortFd);
@@ -341,6 +376,7 @@ void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose)
         }
     }
 }
+#endif
 
 /* ====================================================================
  * The Vovida Software License, Version 1.0 

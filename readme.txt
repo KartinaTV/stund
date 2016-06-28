@@ -31,9 +31,21 @@ program with
   -u sets the unbind secondary IP
   -p sets the primary port and defaults to 3478
   -o sets the secondary port and defaults to 3479
+  -i sets the command port and defaults to 8888
   -d sets the unbind secondary communication port and defaults to 3481
   -b makes the program run in the background
   -m sets up a STERN server starting at port m
   -s runs in verbose statistics mode
   -v runs in verbose mode
 
+Comment:
+--------
+The stun server implementation has been changed to support tr069 server requirements (as described in tr-069 1.1
+standard). I decided to add additional command interface (by default sitting on primaryIP:8888),
+where your tr069 server can send Connection Requests to client devices. Stun server will redirect
+them to a specific destination using address found in HOST http header.
+Tested on OS X 10.11.5 and linux
+
+Warning:
+--------
+The functionality described above supported only for 'select' polling mechanism, and won't work with libevent or epoll!

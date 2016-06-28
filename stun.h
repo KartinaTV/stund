@@ -12,6 +12,7 @@
 #define STUN_MAX_MESSAGE_SIZE 2048
 
 #define STUN_PORT 3478
+#define INPUT_PORT 8888
 
 // define some basic types
 typedef unsigned char  UInt8;
@@ -173,6 +174,10 @@ typedef struct
       StunAtrAddress4 secondaryAddress;
 } StunMessage; 
 
+typedef struct {
+    StunAddress4 address;
+    UInt16 length;
+} CommandMessageHeader;
 
 // Define enum with different types of NAT 
 typedef enum 
@@ -218,10 +223,12 @@ typedef struct
       StunAddress4 myAddr;
       StunAddress4 altAddr;
       StunAddress4 altComAddr;
+      StunAddress4 inputAddr;
       Socket myFd;
       Socket altPortFd;
       Socket altIpFd;
       Socket altIpPortFd;
+      Socket inputFd;
       bool relay; // true if media relaying is to be done
       StunMediaRelay relays[MAX_MEDIA_RELAYS];
 } StunServerInfo;
@@ -269,7 +276,8 @@ bool
 stunParseHostName( char* peerName,
                    UInt32& ip,
                    UInt16& portVal,
-                   UInt16 defaultPort );
+                   UInt16 defaultPort,
+                   bool skipPortCheck = false );
 
 /// return true if all is OK
 /// Create a media relay and do the STERN thing if startMediaPort is non-zero
@@ -277,6 +285,7 @@ bool
 stunInitServer(StunServerInfo& info, 
                const StunAddress4& myAddr, 
                const StunAddress4& altAddr,
+               const StunAddress4& inputAddr,
                int startMediaPort,
                bool bindAlt,
                bool verbose);
@@ -351,6 +360,11 @@ stunOpenSocketPair( StunAddress4& dest, StunAddress4* mappedAddr,
 
 int
 stunRandomPort();
+
+// new functions:
+void ltrim(std::string &s);
+
+bool processInputCommand(StunServerInfo& info, char* buf, unsigned int bufLen, bool verbose);
 
 #endif
 
