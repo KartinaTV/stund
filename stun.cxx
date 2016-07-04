@@ -867,7 +867,7 @@ static void stunCreateSharedSecretResponse(const StunMessage& request, const Stu
 }
 
 
-bool processInputCommand(StunServerInfo& info, char* buf, unsigned int bufLen, bool verbose)
+bool processInputCommand(StunServerInfo& info, char* buf, int bufLen, bool verbose)
 {
     string query(buf);
     string parseString(buf);
@@ -1667,6 +1667,12 @@ bool stunServerHandleMsg(StunServerInfo& info, Socket actFd, bool verboseStatist
     } else if (recvFd == info.altIpFd) {
         recvAltIp = true;
         recvAltPort = false;
+    } else if (recvFd == info.inputFd) {
+        if (verbose)
+            clog << "Received Connection Request (len=" << msgLen << ")" << endl;
+        // Main connection request logic is here !!
+        processInputCommand(info, msg, msgLen, verbose);
+        return true;
     }
     if (verbose)
         clog << "Got a request (len=" << msgLen << ") from " << from << endl;

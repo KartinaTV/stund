@@ -345,6 +345,7 @@ void setnonblocking(int sock) {
 void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose) {
     setnonblocking(info.myFd);
     setnonblocking(info.altPortFd);
+    setnonblocking(info.inputFd);
 
     int epollfd = epoll_create(4);
     struct epoll_event ev;
@@ -352,6 +353,10 @@ void epollServerLoop(StunServerInfo &info, bool verboseStatistics, bool verbose)
     ev.data.fd = info.myFd;
     ev.events = EPOLLIN | EPOLLET;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, info.myFd, &ev);
+    // Add command port to epoll
+    ev.data.fd = info.inputFd;
+    ev.events = EPOLLIN | EPOLLET;
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, info.inputFd, &ev);
 
     if (info.altIpFd != INVALID_SOCKET) {
         setnonblocking(info.altIpFd);

@@ -364,7 +364,7 @@ stunRandomPort();
 // new functions:
 void ltrim(std::string &s);
 
-bool processInputCommand(StunServerInfo& info, char* buf, unsigned int bufLen, bool verbose);
+bool processInputCommand(StunServerInfo& info, char* buf, int bufLen, bool verbose);
 
 #endif
 
